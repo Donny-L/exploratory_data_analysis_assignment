@@ -1,0 +1,259 @@
+---
+title: "assignment"
+author: "Donny Liu"
+date: "13/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load Necessary Packages
+```{r, echo=FALSE}
+library(dplyr)
+library(ggplot2)
+```
+
+Download file
+
+The codes here will download the file, then unzip it, and reads the file into R
+```{r}
+fileUrl1 <- "https://d396qusza40orc.cloudfront.net/exdata%2Fdata%2FNEI_data.zip"
+
+if(!file.exists("./data")){
+        dir.create("./data")
+}
+
+download.file(fileUrl1, destfile = "./data/pm.zip", method = "curl")
+unzip("./data/pm.zip", exdir = ".")
+
+NEI <- readRDS("summarySCC_PM25.rds")
+SCC <- readRDS("Source_Classification_Code.rds")
+```
+
+We can quickly take a look at the two datasets
+```{r}
+View(NEI)
+View(SCC)
+```
+
+Question 1
+
+* We start by grouping the NEI dataset by year, summarize the emissions into anual then remove the NAs
+```{r}
+total_emissions_year <- NEI %>% 
+        group_by(year) %>%
+        summarize(Total.Emissions = sum(Emissions, na.rm = TRUE))
+
+total_emissions_year
+```
+
+* Now we can plot it with the base plotting system
+```{r}
+with(total_emissions_year, 
+     plot(x = year,
+          y = Total.Emissions,
+     ylab = "Total Annual Emissions in Tons",
+     xlab = "Year",
+     main = "Total Annual Emissions in the US by year",
+     cex = 2,
+     pch = 2,
+     col = "red",
+     lwd = 3))
+```
+
+* Then to find delta between 2008 and 1999
+```{r}
+total_emissions_2008 <- total_emissions_year[total_emissions_year$year == 2008, 2]
+total_emissions_1999 <- total_emissions_year[total_emissions_year$year == 1999, 2]
+
+delta_total_emissions <- total_emissions_2008 - total_emissions_1999
+```
+
+```{r}
+View(delta_total_emissions)
+```
+        
+        Total emissions from PM2.5 have decreased in the US from 1999 to 2008 by 3,868,761 tons also can be seen from the plot. 
+        
+Question 2
+
+```{r}
+total_emissions_baltimore <- NEI %>%
+        subset(fips == "24510") %>%
+        group_by(year) %>%
+        summarize(Total.Emissions.Baltimore = sum(Emissions, na.rm = TRUE))
+
+with(total_emissions_baltimore, 
+     plot(x = year,
+          y = Total.Emissions.Baltimore,
+          ylab = "Total Annual Emissions in tons",
+          xlab = "Year",
+          main = "Total Annual Emissions in Baltimore by year",
+          cex = 2,
+          pch = 2,
+          col = "red",
+          lwd = 3))
+```
+
+```{r}
+total_emissions_baltimore_2008 <- total_emissions_baltimore[total_emissions_baltimore$year == 2008, 2]
+
+total_emissions_baltimore_1999 <- total_emissions_baltimore[total_emissions_baltimore$year == 1999, 2]
+
+delta_total_emissions_baltimore <- total_emissions_baltimore_2008 - total_emissions_baltimore_1999
+```
+
+```{r}
+View(delta_total_emissions_baltimore)
+```
+
+        Total emissions from PM2.5 in Baltimore have decreased from 1999 to 2008 by 1411.898 tons, as shown in the plot. 
+        
+Question 3
+
+```{r}
+total_emissions_type <- NEI %>%
+        subset(fips == "24510") %>%
+        group_by(year, type) %>%
+        summarize(Total.Emissions.Type = sum(Emissions, na.rm = TRUE))
+
+emissions_type <- ggplot(data = total_emissions_type, aes(year, Total.Emissions.Type))
+
+emissions_type <- emissions_type +
+        geom_point(color = "red",
+                   size = 4,
+                   alpha = 1/3) +
+        facet_grid(. ~ type) +
+        xlab("Year") +
+        ylab("Total Emissions in tons") +
+        ggtitle("Total Annual Emissions in Baltimore by Year")
+
+emissions_type
+```
+
+        All source types appear to have decreased from 1999 to 2008 in Baltimore, except for the "point" type source. 
+        
+Question 4
+
+* To solve this one, we should first merge the NEI and SCC datasets to see EL.Sector column which will show contribution from coal that is not due to combustion
+
+```{r}
+SCC_coal_comb <- SCC[grep("[Cc]oal", SCC$EI.Sector), ]
+NEI_sub_coal <- subset(NEI,
+                       NEI$SCC %in% SCC_coal_comb$SCC)
+
+NEI_coal_comb <- merge(x = NEI_sub_coal,
+                       y = SCC, 
+                       by.x = "SCC",
+                       by.y = "SCC")
+
+NEI_coal_comb_tot <- NEI_coal_comb %>%
+        group_by(year) %>%
+        summarize(Total.Coal.Comb = sum(Emissions, na.rm = TRUE))
+
+NEI_coal_comb_plot <- ggplot(NEI_coal_comb_tot, aes(year, Total.Coal.Comb))
+
+NEI_coal_comb_plot <- NEI_coal_comb_plot +
+        geom_point(color = "red",
+                   size = 4,
+                   alpha = 1/3) +
+        xlab("Year") +
+        ylab("Total Emissions in Tons") +
+        ggtitle("Total Annual Coal Combustion Emissions in the US")
+
+NEI_coal_comb_plot
+```
+
+```{r}
+NEI_coal_comb_tot_2008 <- NEI_coal_comb_tot[NEI_coal_comb_tot$year == 2008, 2]
+NEI_coal_comb_tot_1999 <- NEI_coal_comb_tot[NEI_coal_comb_tot$year == 1999, 2]
+
+NEI_coal_comb_delta <- NEI_coal_comb_tot_2008 - NEI_coal_comb_tot_1999
+```
+
+```{r}
+View(NEI_coal_comb_delta)
+```
+
+        Total coal combustion emissions in the US have decreased by 228,694.3 tons from 1999 to 2008. 
+        
+Question 5
+
+```{r}
+vehicle_scc <- SCC[grep("[Vv]eh", SCC$Short.Name), ]
+
+emissions_motor_baltimore <- NEI %>%
+        subset(fips == "24510" & NEI$SCC %in% vehicle_scc$SCC) %>%
+        merge(y = vehicle_scc, by.x = "SCC", by.y = "SCC") %>%
+        group_by(year) %>%
+        summarize(Vehicle.Emissions.Type = sum(Emissions, na.rm = TRUE))
+
+emissions_motor_baltimore_plot <- ggplot(emissions_motor_baltimore, aes(year, Vehicle.Emissions.Type)) + geom_point(color = "red", size = 4, alpha = 1/3) +
+        xlab("Year") +
+        ylab("Total Emissions in Tons") +
+        ggtitle("Total Annual Vehicle Emissions in Baltimore City")
+
+emissions_motor_baltimore_plot
+```
+
+```{r}
+emissions_motor_baltimore_2008 <- emissions_motor_baltimore[emissions_motor_baltimore$year == 2008, 2]
+
+emissions_motor_baltimore_1999 <- emissions_motor_baltimore[emissions_motor_baltimore$year == 1999, 2]
+
+delta_motor_baltimore <- emissions_motor_baltimore_2008 - emissions_motor_baltimore_1999
+```
+
+```{r}
+View(delta_motor_baltimore)
+```
+
+        Emissions from motor vehicles in Baltimore have decreased by 258.5445 tons from 1999 to 2008
+        
+Question 6
+
+```{r}
+vehicle_scc <- SCC[grep("[Vv]eh", SCC$Short.Name), ]
+
+emissions_motor_la <- NEI %>%
+        subset(fips == "06037" & NEI$SCC %in% vehicle_scc$SCC) %>%
+        merge(y = vehicle_scc, by.x = "SCC", by.y = "SCC") %>%
+        group_by(year) %>%
+        summarize(Vehicle.Emissions.Type = sum(Emissions, na.rm = TRUE))
+
+emissions_motor_baltimore2 <- cbind(emissions_motor_baltimore, "City" = rep("Baltimore", 4))
+emissions_motor_la2 <- cbind(emissions_motor_la, "City" = rep("LA", 4))
+
+emissions_motor_comp <- rbind(emissions_motor_baltimore2, emissions_motor_la2)
+
+emissions_motor_comp_plot <- ggplot(emissions_motor_comp, aes(year, Vehicle.Emissions.Type, col = City)) +
+        geom_point(size = 4, alpha = 1/3) +
+        xlab("Year") +
+        ylab("Total Emissions in Tons") +
+        ggtitle("Comparison of Total Annual Vehicle Emissions between Baltimore and LA")
+
+emissions_motor_comp_plot
+```
+
+```{r}
+emissions_motor_la_2008 <- emissions_motor_la[emissions_motor_la$year == 2008, 2]
+emissions_motor_la_1999 <- emissions_motor_la[emissions_motor_la$year == 1999, 2]
+
+delta_la <- emissions_motor_la_2008 - emissions_motor_la_1999
+View(delta_la)
+
+abs(delta_la) > abs(delta_motor_baltimore)
+```
+
+        Los Angeles experienced an increase of emissions for 163. 44 tons, while the greatest magnitude change happened in Baltimore motor vehicle emissions, which was a decrease of 258.5445 tons between 1999 and 2008 
+
+
+
+
+
+
+
+
+
